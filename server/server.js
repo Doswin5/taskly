@@ -12,23 +12,25 @@ connectDB();
 const app = express();
 
 const allowedOrigins = [
-  "http://localhost:5174",
+  "http://localhost:5173",
+  "https://taskly-two-tan.vercel.app",
   process.env.CLIENT_URL,
 ].filter(Boolean);
 
-console.log("CLIENT_URL:", process.env.CLIENT_URL);
-console.log("Allowed origins:", allowedOrigins);
-
 app.use(
   cors({
-    origin: function (origin, callback) {
+    origin: (origin, callback) => {
+      console.log("Incoming origin:", origin);
+
       if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
+        return callback(null, true);
       }
+
+      return callback(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
