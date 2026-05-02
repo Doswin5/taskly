@@ -6,7 +6,7 @@ import Task from "../models/Task.js";
 // @access  Private
 export const createTask = async (req, res) => {
   try {
-    const { title, description } = req.body;
+    const { title, description, priority, category, dueDate } = req.body;
 
     if (!title) {
       return res.status(400).json({ message: "Title is required" });
@@ -15,6 +15,9 @@ export const createTask = async (req, res) => {
     const task = await Task.create({
       title,
       description,
+      priority,
+      category,
+      dueDate,
       user: req.user._id,
     });
 
@@ -48,7 +51,7 @@ export const updateTask = async (req, res) => {
       return res.status(400).json({ message: "Invalid task ID" });
     }
 
-    const { title, description } = req.body;
+    const { title, description, priority, category, dueDate } = req.body;
 
     const task = await Task.findById(req.params.id);
 
@@ -61,8 +64,11 @@ export const updateTask = async (req, res) => {
       return res.status(401).json({ message: "Not authorized" });
     }
 
-    task.title = title || task.title;
-    task.description = description || task.description;
+    task.title = title ?? task.title;
+    task.description = description ?? task.description;
+    task.priority = priority ?? task.priority;
+    task.category = category ?? task.category;
+    task.dueDate = dueDate ?? task.dueDate;
 
     const updatedTask = await task.save();
 
