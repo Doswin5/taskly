@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
 import TaskForm from "../components/TaskForm";
 import TaskList from "../components/TaskList";
+import EditTaskModal from "../components/EditTaskModal";
 import {
   createTask,
   deleteTask,
@@ -10,10 +11,11 @@ import {
   updateTask,
 } from "../api/taskApi";
 import { useAuth } from "../context/AuthContext";
-import { useMemo } from "react";
+import toast from "react-hot-toast";
 
 export default function Dashboard() {
   const { token, user } = useAuth();
+
   const [tasks, setTasks] = useState([]);
   const [filter, setFilter] = useState("all");
   const [loading, setLoading] = useState(true);
@@ -22,35 +24,66 @@ export default function Dashboard() {
     id: null,
     type: null,
   });
+
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
 
-  const filteredTasks = useMemo(() => {
-    let result = tasks;
+  const [selectedTask, setSelectedTask] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-    if (filter === "pending") {
-      result = result.filter((task) => task.status === "pending");
-    }
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(null);
 
-    if (filter === "completed") {
-      result = result.filter((task) => task.status === "completed");
-    }
+  const [stats, setStats] = useState({
+    total: 0,
+    pending: 0,
+    completed: 0,
+    highPriority: 0,
+    overdue: 0,
+  });
 
-    if (searchTerm.trim()) {
-      result = result.filter(
-        (task) =>
-          task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          task.description?.toLowerCase().includes(searchTerm.toLowerCase()),
-      );
-    }
+  const openEditModal = (task) => {
+    setSelectedTask(task);
+    setIsEditModalOpen(true);
+  };
 
-    return result;
-  }, [tasks, filter, searchTerm]);
+  const closeEditModal = () => {
+    setSelectedTask(null);
+    setIsEditModalOpen(false);
+  };
 
   const fetchTasks = async () => {
     try {
+      setLoading(true);
       setError("");
-      const res = await getTasks(token);
-      setTasks(res.data);
+
+      const params = {
+        page,
+        limit: 10,
+        sort: sortBy,
+      };
+
+      if (filter === "pending" || filter === "completed") {
+        params.status = filter;
+      }
+
+      if (filter === "high") {
+        params.priority = "high";
+      }
+
+      if (filter === "overdue") {
+        params.overdue = true;
+      }
+
+      if (searchTerm.trim()) {
+        params.search = searchTerm.trim();
+      }
+
+      const res = await getTasks(params);
+
+      setTasks(res.data.tasks);
+      setPagination(res.data.pagination);
+      setStats(res.data.stats);
     } catch (err) {
       setError(err.response?.data?.message || "Failed to fetch tasks");
     } finally {
@@ -59,17 +92,30 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    if (token) {
+    setPage(1);
+  }, [filter, sortBy, searchTerm]);
+
+  useEffect(() => {
+    if (!token) return;
+
+    const timer = setTimeout(() => {
       fetchTasks();
-    }
-  }, [token]);
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [token, page, filter, sortBy, searchTerm]);
 
   const handleCreateTask = async (taskData) => {
     try {
-      const res = await createTask(taskData, token);
-      setTasks((prev) => [res.data, ...prev]);
+      setError("");
+
+      await createTask(taskData);
+
+      toast.success("Task created");
+      await fetchTasks();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to create task");
+      toast.error(err.response?.data?.message || "Failed to create task");
     }
   };
 
@@ -77,13 +123,28 @@ export default function Dashboard() {
     setActionLoading({ id, type: "toggle" });
     setError("");
 
+    const previousTasks = tasks;
+
+    setTasks((prev) =>
+      prev.map((task) =>
+        task._id === id
+          ? {
+              ...task,
+              status: task.status === "pending" ? "completed" : "pending",
+            }
+          : task,
+      ),
+    );
+
     try {
-      const res = await toggleTaskStatus(id, token);
-      setTasks((prev) =>
-        prev.map((task) => (task._id === id ? res.data : task)),
-      );
+      await toggleTaskStatus(id);
+
+      toast.success("Task status updated");
+      await fetchTasks();
     } catch (err) {
+      setTasks(previousTasks);
       setError(err.response?.data?.message || "Failed to update task");
+      toast.error(err.response?.data?.message || "Failed to update task");
     } finally {
       setActionLoading({ id: null, type: null });
     }
@@ -92,14 +153,16 @@ export default function Dashboard() {
   const handleUpdateTask = async (id, taskData) => {
     setActionLoading({ id, type: "update" });
     setError("");
-    try {
-      const res = await updateTask(id, taskData, token);
 
-      setTasks((prev) =>
-        prev.map((task) => (task._id === id ? res.data : task)),
-      );
+    try {
+      await updateTask(id, taskData);
+
+      toast.success("Task updated");
+      await fetchTasks();
+      closeEditModal();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to update task");
+      toast.error(err.response?.data?.message || "Failed to update task");
     } finally {
       setActionLoading({ id: null, type: null });
     }
@@ -109,21 +172,65 @@ export default function Dashboard() {
     setActionLoading({ id, type: "delete" });
     setError("");
 
+    const previousTasks = tasks;
+
+    setTasks((prev) => prev.filter((task) => task._id !== id));
+
     try {
-      await deleteTask(id, token);
-      setTasks((prev) => prev.filter((task) => task._id !== id));
+      await deleteTask(id);
+
+      toast.success("Task deleted");
+      await fetchTasks();
     } catch (err) {
+      setTasks(previousTasks);
       setError(err.response?.data?.message || "Failed to delete task");
+      toast.error(err.response?.data?.message || "Failed to delete task");
     } finally {
       setActionLoading({ id: null, type: null });
     }
   };
 
   const taskCounts = {
-    all: tasks.length,
-    pending: tasks.filter((task) => task.status === "pending").length,
-    completed: tasks.filter((task) => task.status === "completed").length,
+    all: stats.total,
+    pending: stats.pending,
+    completed: stats.completed,
   };
+
+  const dashboardStats = [
+    {
+      label: "Total Tasks",
+      value: stats.total,
+      filter: "all",
+    },
+    {
+      label: "Pending",
+      value: stats.pending,
+      filter: "pending",
+    },
+    {
+      label: "Completed",
+      value: stats.completed,
+      filter: "completed",
+    },
+    {
+      label: "High Priority",
+      value: stats.highPriority,
+      filter: "high",
+    },
+    {
+      label: "Overdue",
+      value: stats.overdue,
+      filter: "overdue",
+    },
+  ];
+
+  useEffect(() => {
+    if (!error) return;
+
+    const timer = setTimeout(() => setError(""), 3000);
+
+    return () => clearTimeout(timer);
+  }, [error]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -156,6 +263,21 @@ export default function Dashboard() {
           </div>
         </div>
 
+        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {dashboardStats.map((stat) => (
+            <button
+              key={stat.label}
+              onClick={() => setFilter(stat.filter)}
+              className="rounded-2xl border border-slate-800 bg-slate-900 p-5 text-left transition hover:border-indigo-500"
+            >
+              <p className="text-sm text-slate-400">{stat.label}</p>
+              <p className="mt-2 text-2xl font-bold text-white">
+                {stat.value}
+              </p>
+            </button>
+          ))}
+        </div>
+
         {error && (
           <div className="mb-6 flex items-center justify-between gap-4 rounded-xl border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-300">
             <span>{error}</span>
@@ -172,31 +294,85 @@ export default function Dashboard() {
           <TaskForm onCreate={handleCreateTask} />
 
           <div>
-            <input
-              type="text"
-              placeholder="Search tasks..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="mb-4 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-indigo-500"
-            />
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <input
+                type="text"
+                placeholder="Search tasks..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-white outline-none focus:border-indigo-500"
+              />
+
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="rounded-xl border border-slate-800 bg-slate-900 px-4 py-3 text-white outline-none"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="dueDate">Due date</option>
+                <option value="priority">Priority</option>
+              </select>
+            </div>
+
             {loading ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-slate-400">
-                Loading tasks...
+              <div className="grid gap-4">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="h-24 animate-pulse rounded-2xl bg-slate-800"
+                  />
+                ))}
               </div>
             ) : (
-              <TaskList
-                tasks={filteredTasks}
-                onToggle={handleToggleTask}
-                onDelete={handleDeleteTask}
-                onUpdate={handleUpdateTask}
-                actionLoading={actionLoading}
-                filter={filter}
-                searchTerm={searchTerm}
-              />
+              <>
+                <TaskList
+                  tasks={tasks}
+                  onToggle={handleToggleTask}
+                  onDelete={handleDeleteTask}
+                  onEdit={openEditModal}
+                  actionLoading={actionLoading}
+                />
+
+                {pagination && pagination.totalPages > 1 && (
+                  <div className="mt-6 flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                    <button
+                      onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
+                      disabled={!pagination.hasPrevPage}
+                      className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+
+                    <p className="text-sm text-slate-400">
+                      Page {pagination.currentPage} of {pagination.totalPages}
+                    </p>
+
+                    <button
+                      onClick={() => setPage((prev) => prev + 1)}
+                      disabled={!pagination.hasNextPage}
+                      className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
       </main>
+
+      <EditTaskModal
+        task={selectedTask}
+        isOpen={isEditModalOpen}
+        onClose={closeEditModal}
+        onUpdate={handleUpdateTask}
+        isLoading={
+          actionLoading.id === selectedTask?._id &&
+          actionLoading.type === "update"
+        }
+      />
     </div>
   );
 }

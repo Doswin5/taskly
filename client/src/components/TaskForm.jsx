@@ -1,20 +1,51 @@
 import { useState } from "react";
 
 export default function TaskForm({ onCreate }) {
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    category: "General",
+    dueDate: "",
+  });
+
   const [loading, setLoading] = useState(false);
+
+  const handleChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      description: "",
+      priority: "medium",
+      category: "General",
+      dueDate: "",
+    });
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!title.trim()) return;
+  if (!formData.title.trim()) return;
 
+  try {
     setLoading(true);
-    await onCreate({ title, description });
-    setTitle("");
-    setDescription("");
+
+    await onCreate({
+      ...formData,
+      category: formData.category.trim() || "General",
+      dueDate: formData.dueDate || null,
+    });
+
+    resetForm();
+  } finally {
     setLoading(false);
+  }
   };
 
   return (
@@ -27,21 +58,55 @@ export default function TaskForm({ onCreate }) {
       <div className="mt-4 space-y-3">
         <input
           type="text"
+          name="title"
           placeholder="Task title"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          value={formData.title}
+          onChange={handleChange}
           className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-indigo-500"
         />
+
         <textarea
+          name="description"
           placeholder="Task description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          value={formData.description}
+          onChange={handleChange}
           rows="4"
           className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-indigo-500"
         />
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <select
+            name="priority"
+            value={formData.priority}
+            onChange={handleChange}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-indigo-500"
+          >
+            <option value="low">Low priority</option>
+            <option value="medium">Medium priority</option>
+            <option value="high">High priority</option>
+          </select>
+
+          <input
+            type="text"
+            name="category"
+            placeholder="Category"
+            value={formData.category}
+            onChange={handleChange}
+            className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-indigo-500"
+          />
+        </div>
+
+        <input
+          type="date"
+          name="dueDate"
+          value={formData.dueDate}
+          onChange={handleChange}
+          className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-white outline-none focus:border-indigo-500"
+        />
+
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !formData.title.trim()}
           className="rounded-xl bg-indigo-600 px-4 py-3 font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-indigo-800"
         >
           {loading ? "Creating..." : "Add task"}

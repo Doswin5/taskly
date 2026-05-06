@@ -20,7 +20,10 @@ export const loginUser = (userData) => API.post("/auth/login", userData);
 
 export const getMe = () => API.get("/auth/me");
 
-export const getTasks = () => API.get("/tasks");
+export const getTasks = (params = {}) =>
+  API.get("/tasks", {
+    params,
+  });
 
 export const createTask = (taskData) => API.post("/tasks", taskData);
 
@@ -28,4 +31,4 @@ export const updateTask = (id, taskData) => API.put(`/tasks/${id}`, taskData);
 
 export const deleteTask = (id) => API.delete(`/tasks/${id}`);
 
-export const toggleTaskStatus = (id) => API.patch(`/tasks/${id}/status`,{});
+export const toggleTaskStatus = (id) => API.patch(`/tasks/${id}/status`, {});
